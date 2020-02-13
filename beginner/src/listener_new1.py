@@ -163,11 +163,13 @@ class person(threading.Thread):
         # print("flag{}".format(self.flag))
         # print("initial data",self.filteredY)
         # print(ospy.Subscriber("Alex", Person, self.sensor1_callback)
+        '''
         self.sub_s2 = rospy.Subscriber("Ben", Person, self.sensor2_callback)
         self.sub_s3 = rospy.Subscriber("Mary", Person, self.sensor3_callback)("avgFilter{}/n".format(self.avgFilter))
         self.norospy.Subscriber("Alex", Person, self.sensor1_callback)
         self.sub_s2 = rospy.Subscriber("Ben", Person, self.sensor2_callback)
-        self.sub_s3 = rospy.Subscriber("Mary", Person, self.sensor3_callback)#mal = np.mean(self.filteredY)   
+        self.sub_s3 = rospy.Subscriber("Mary", Person, self.sensor3_callback)#mal = np.mean(self.filteredY) 
+        '''  
         self.acc = self.filteredY[self.flag]
          
         self.MaxMin = np.max(self.filteredY) - np.min(self.filteredY)
@@ -276,10 +278,10 @@ class person(threading.Thread):
 if __name__ =='__main__':
 
 
-    p1 = person("android/imu1", "Chiu")
+    p1 = person("/android/tango1/imu", "Chiu")
     p1.start()
 
-    p = person("android/imu2", "Alex")
+    p = person("/android/tango2/imu", "Alex")
     p.start()
 
     #p2 = person("android/imu3", "Ben")

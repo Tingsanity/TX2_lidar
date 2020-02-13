@@ -1,14 +1,14 @@
 <!-- Reusable launch file for obstacle detection //one_person_rurun two_person_follow.bag two_person.bag-->
 <launch>
   
-  <node name="scans_demo" pkg="rosbag" type="play" args="--clock --loop $(find obstacle_detector)/resources/others/two_person.bag"/>
+  <node name="scans_demo" pkg="rosbag" type="play" args="--clock --loop $(find obstacle_detector)/resources/others/case888.bag"/>
 
   <!--node name="android_imu" pkg="rostopic" type="echo" args="/android/imu"/-->
   
   <node name="rviz" pkg="rviz" type="rviz" output="screen" args="-d $(find obstacle_detector)/resources/obstacle_detector.rviz"/>
   
 
-  <node name="obstacle_extractor" pkg="obstacle_detector" type="obstacle_extractor_node">
+  <!--node name="obstacle_extractor" pkg="obstacle_detector" type="obstacle_extractor_node">
     <param name="active"               value="true"/>
     <param name="use_scan"             value="true"/>
     <param name="use_pcl"              value="false"/>
@@ -45,7 +45,7 @@
     <param name="frame_id"                value="laser"/>
 
     <remap from="tracked_obstacles" to="obstacles"/>
-  </node>
+  </node-->
   
   <node name="imu_listener1" pkg="beginner" type="listener_new1.py" >
   </node>

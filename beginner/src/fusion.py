@@ -20,9 +20,11 @@ class fusioner:
     def __init__(self):
         rospy.init_node("fusioner")
         self.sub_h = rospy.Subscriber("obstacles", Obstacles, self.human_callback)
-        # self.sub_h1 = rospy.Subscriber("obstacles_2", Obstacles, self.human_callback1)
-        # self.sub_h2 = rospy.Subscriber("obstacles_3", Obstacles, self.human_callback2)
-        # self.sub_h3 = rospy.Subscriber("obstacles_4", Obstacles, self.human_callback3)
+
+        self.person_num = 4
+        self.lidarinit = False 
+        self.ids = []
+        self.remove_id = []
 
         self.sub_s = rospy.Subscriber("Chiu", Person, self.sensor_callback)
         self.sub_s1 = rospy.Subscriber("Alex", Person, self.sensor1_callback)
@@ -83,7 +85,7 @@ class fusioner:
 
         self.pairing_result = {}
 
-        self.alpha = 0.1
+        self.alpha = 0.4
         self.fusion_flag = 0
         self.fusion_size = 100
 
@@ -118,7 +120,6 @@ class fusioner:
             return
         if flag[i][j] == 'ok':
             self.printLcs(flag, a, i - 1, j - 1)
-            # print a[i - 1]
             self.li.append(a[i-1])
         elif flag[i][j] == 'left':
             self.printLcs(flag, a, i, j - 1)
@@ -126,7 +127,7 @@ class fusioner:
             self.printLcs(flag, a, i - 1, j)
     
     # --- fusion algorithm ---
-    def CalculateDistanceMatrix(self, lidar_table, sensor_table):
+    def CalculateDistanceMatrix(self, lidar_table, sensor_table, idchange):
         df = pd.DataFrame(columns = sensor_table.keys(), index = lidar_table.keys())
         df1 = pd.DataFrame(columns = sensor_table.keys(), index = lidar_table.keys())
         self.pairing_result.clear()
@@ -134,20 +135,12 @@ class fusioner:
         num_lidar = len(df)
         for sensor_key,sensor_values in sensor_table.items():
             for lidar_key,lidar_values in lidar_table.items():
-                # df.loc[lidar_key, sensor_key] = len(lidar_values)/ (len(lidar_values)+editdistance.eval(lidar_values, sensor_values))
-                # print('lidar:{}, sensor:{},distance:{}'.format(lidar_key, sensor_key, editdistance.eval(lidar_values, sensor_values)))
-                # df.loc[lidar_key, sensor_key] = 360/ (360 + dtw.distance(np.array(lidar_values), np.array(sensor_values)))
                 df.loc[lidar_key, sensor_key] = 360/ (360 + dtw.distance(np.array(lidar_values), np.array(sensor_values)))
-                # print('lidar:{}, sensor:{},distance:{}'.format(lidar_key, sensor_key, dtw.distance(np.array(lidar_values), np.array(sensor_values))))
                 c, flag = self.lcs(lidar_values, sensor_values)
                 self.printLcs(flag, lidar_values, len(lidar_values), len(sensor_values))
                 df1.loc[lidar_key, sensor_key] = len(self.li)
                 print('lidar:{}, sensor:{},distance:{}'.format(lidar_key, sensor_key, self.li))
                 self.li.clear()
-            # df.loc['var'] = df.var(axis=0)
-            # self.pairing_result[df[sensor_key].astype('float64').idxmax()] = sensor_key
-            # del lidar_table[df[sensor_key].astype('float64').idxmin()]
-            # df.drop([sensor_key], axis=1, inplace=True)
         print(df.var())
         print(df)
         x = num_sensor
@@ -160,17 +153,13 @@ class fusioner:
                 flag = 1
             tmp = lidar_id
             self.NoPairingAccuracy[sensor_key].append(lidar_id)
-            # df1.drop(index=[lidar_id], inplace=True)
-            # df1.drop([sensor_key], axis=1, inplace=True)
         if(flag==1):
             self.counter = self.counter+1
         for i in range(num_lidar):
-            # print(x)
             if(x==0):
                 break
             else:
                 x = x-1
-            # choose_sensor_name = df.var().idxmax()
             if(len(df)==1):
                 choose_sensor_name = df.columns[0]
                 choosing_lidar_id = (df.index[0])
@@ -183,11 +172,18 @@ class fusioner:
             print('sensor:{} choose lidar {}'.format(choose_sensor_name, choosing_lidar_id))
             # --- self.pairing_result = {'Lidar_id': 'sensor name'} like {'10': 'Alex', '6': 'Chiu'} ---
             self.pairing_result[df[choose_sensor_name].astype('float64').idxmax()] = choose_sensor_name
+
             # --- self.longterm_pairing = 'sensor':['Lidar_id', similarity score] like {'Alex': ['10', 0.96], 'Chiu': ['6', 0.85]} ---
             if(len(self.longterm_pairing[choose_sensor_name])==0):
                 self.longterm_pairing[choose_sensor_name].append(df[choose_sensor_name].astype('float64').idxmax())
                 self.longterm_pairing[choose_sensor_name].append(df[choose_sensor_name].astype('float64').max())
             else:
+                
+                if idchange: #19/12/23
+                    if self.longterm_pairing[choose_sensor_name][0] in self.remove_id:
+                        self.longterm_pairing[choose_sensor_name][1] = 0
+                
+
                 if(self.longterm_pairing[choose_sensor_name][0] == df[choose_sensor_name].astype('float64').idxmax()):
                     self.longterm_pairing[choose_sensor_name][1] = self.alpha*self.longterm_pairing[choose_sensor_name][1] + (1 - self.alpha) * df[choose_sensor_name].astype('float64').max()
                    
@@ -198,11 +194,10 @@ class fusioner:
                     else:
                         self.longterm_pairing[choose_sensor_name][1] = df[choose_sensor_name].astype('float64').max()
                         self.longterm_pairing[choose_sensor_name][0] = df[choose_sensor_name].astype('float64').idxmax()
-            # self.longterm_pairing[df[choose_sensor_name].astype('float64').idxmax()].insert(1, df[choose_sensor_name].astype('float64').max())
-            # del lidar_table[df[choose_sensor_name].astype('float64').idxmax()]
             # --- delete selected combination ---
-            df.drop(index=[choosing_lidar_id], inplace=True)
-            df.drop([choose_sensor_name], axis=1, inplace=True)
+            df = df.drop(index=[choosing_lidar_id])
+            df = df.drop([choose_sensor_name], axis=1)
+        #self.remove_id.clear()
         print(self.NoPairingAccuracy)
         print("no pairing counter",self.counter)    
         print(self.pairing_result)
@@ -220,82 +215,19 @@ class fusioner:
             # rospy.loginfo("sensor:{}, {}".format(sensor_name, choose_id))    
         print("-----------------------------------------------------")
         del df
-    def add_lidar_data(self,data):
-        for circle in data.circles:
-            
-            id = circle.id
-            self.id_set.add(id)
-            self.d[str(id)].append(circle.state)
-            self.dir_table[str(id)]  = circle.direction
-            self.LCSS_table[str(id)] = circle.LCSS_state
-            if(circle.id in self.pairing_result.keys()):
-                id = self.pairing_result[circle.id] 
-                circle.id = id
-                self.Circle_vec.append(circle)
 
-    def human_callback3(self,data):
-        self.Circle_vec_4 = data.circles
-        for circle in self.Circle_vec_4:
-            id = circle.id
-            self.id_set.add(id)
-            self.d[str(id)].append(circle.state)
-            self.dir_table[str(id)]  = circle.direction
-            self.LCSS_table[str(id)] = circle.LCSS_state
-
-            # if(circle.id in self.pairing_result.keys()):
-            #     id = self.pairing_result[circle.id] + circle.id 
-            #     circle.id = id  
-
-    def human_callback2(self,data):
-        self.Circle_vec_3 = data.circles
-        for circle in self.Circle_vec_3:
-            id = circle.id
-            self.id_set.add(id)
-            self.d[str(id)].append(circle.state)
-            self.dir_table[str(id)]  = circle.direction
-            self.LCSS_table[str(id)] = circle.LCSS_state
-          
-            # for keys, values in self.longterm_pairing.items():
-            #     if(circle.id == values[0]):
-            # #         circle.id = keys
-            # if(circle.id in self.pairing_result.keys()):
-            #     id = self.pairing_result[circle.id] + circle.id
-            #     circle.id = id        
-
-    
-    def human_callback1(self,data):
-        self.Circle_vec_2 = data.circles
-        for circle in self.Circle_vec_2:
-            id = circle.id
-            self.id_set.add(id)
-            self.d[str(id)].append(circle.state)
-            self.dir_table[str(id)]  = circle.direction
-            self.LCSS_table[str(id)] = circle.LCSS_state
-          
-            # for keys, values in self.longterm_pairing.items():
-            #     if(circle.id == values[0]):
-            #         circle.id = keys
-            # if(circle.id in self.pairing_result.keys()):
-            #     id = self.pairing_result[circle.id] + circle.id
-            #     circle.id = id
-        
     def human_callback(self,data):
         self.Circle_vec = data.circles
         self.Segment_vec = data.segments
-
+        idmem = []
+        idchange = False
         for circle in self.Circle_vec:
-            # print(len(circle.state_list))
-            # print(len(circle.direction_list))
-            # array = np.array(circle.state_list,dtype=int)
-            # if(array.size==50):
-            #     state = np.argmax(np.bincount(array))
-            #     print("id:{},state:{}".format(circle.id,state))
-            # states = list(circle.state_list)
-            # state_count = Counter(states)
-            # print("id:{},{}".format(circle.id,state_count.most_common(1)[0][0]))
-            #--------------------------------------
             id = circle.id
-            self.id_set.add(id)
+            idmem.append(id)
+            #self.id_set.add(id)
+            if not id in self.ids:
+                #idchange = True
+                self.ids.append(id)
             # --- self.d = 'lidar_id':[state, ....] like {'10':[1,1,1,0,1]}---
             self.d[str(id)].append(circle.state)
             # --- self.dir_table = 'id': moving direction like {'6': 360.0, '10': 135.0} ---
@@ -306,22 +238,26 @@ class fusioner:
             for keys, values in self.longterm_pairing.items():
                 if(circle.id == values[0]):
                     circle.id =  keys +"("+str(round(circle.center.x,1))+","+str(round(circle.center.y,1))+")"
-                    # circle.id =  keys
-                # else:
-                #     circle.id = "No badge" "("+str(round(circle.center.x,1))+","+str(round(circle.center.y,1))+")"
-            # if(circle.id in self.pairing_result.keys()):
-            #     id = self.pairing_result[circle.id] + circle.id
-            #     circle.id = id
-        
 
+        # --- once obstacle id change remove old id ---
+        if True:
+            for idt in self.ids:
+                if not idt in idmem:
+                    self.remove_id.append(idt)
+                    self.ids.remove(idt)
+                    del self.d[str(idt)]
+                    del self.dir_table[str(idt)]
+                    del self.LCSS_table[str(idt)]
+                    del self.state_table[str(idt)]
+                    idchange = True
+        #print("IDS:{},idmem:{},state_table{}" .format(self.ids,idmem,self.state_table.keys()))
         if(self.fusion_flag == self.fusion_size-1):
-            for human_id in self.id_set:
+            for human_id in self.ids:
                 state_count = Counter(self.d[str(human_id)])
                 if(len(state_count)):
                     l = state_count.most_common(1)[0][0]
                 else:
                     continue
-                # print("human id:{}, state:{}".format(human_id,state_count))
                 # --- self.state_table = 'LiDAR_id':[state list] like []
                 if(l==0):
                     self.state_table[str(human_id)].append(0)
@@ -332,26 +268,16 @@ class fusioner:
                     self.state_table_LCSS[str(human_id)].append(self.LCSS_table[str(human_id)])
                     print("----------------", self.state_table)
                 print("Lidar id:{}, total list:{}".format(human_id, self.state_table[str(human_id)]))
-                # print(("Lidar id:{}, edit distance:{}".format(human_id, editdistance.eval(self.total_sensor_states_LCSS, self.state_table_LCSS[str(human_id)]))))
-                # print("sensor_len:{},lidar len:{}".format(len(self.total_sensor_states),len(self.state_table[str(human_id)])))
                 distance = dtw.distance(np.array(self.total_sensor_states), np.array(self.state_table[str(human_id)]))
                 edit_distance = editdistance.eval(self.total_sensor_states_LCSS, self.state_table_LCSS[str(human_id)])
                 self.dtw_distance[str(human_id)] = distance
                 self.edit_distance[str(human_id)] = edit_distance
-                # print("lidar id:{}, distance:{}".format(human_id, self.dtw_distance[str(human_id)]))
                 del self.d[str(human_id)]
 
-            self.CalculateDistanceMatrix(self.state_table, self.sensor_table)
-            
-            # print(" total list:{}".format(self.total_sensor_states_LCSS))
-
-            
+            self.CalculateDistanceMatrix(self.state_table, self.sensor_table, idchange)
         self.fusion_flag = (self.fusion_flag+1) % self.fusion_size
         
-    
     def sensor_callback(self,data):
-        # rospy.loginfo(data.direction)
-        # self.sensor_direction[0,1] = data.user_id
         id = data.user_id
         self.State_Sensor[self.State_Sflag] = data.state
         self.State_Sflag = (self.State_Sflag + 1) % self.StateSize
@@ -360,24 +286,18 @@ class fusioner:
         
         if(self.State_Sflag==10):
             for key,values in self.s.items():
-                # print("key:{} values:{}".format(key, values))
                 state = Counter(values)
                 if(len(state)):
                     s = state.most_common(1)[0][0]
-                    # print("sensor states table",s)
                 else:
                     continue
                 if(s==0):
                     self.sensor_table[key].append(0)
                 else:
                     self.sensor_table[key].append(self.sensor_dir[key])
-                # print("key:{} state:{}".format(key, s))
-            # print(np.bincount(self.State_Sensor.astype(np.int32)))
-            # print("++++++",self.s[id])
             state_count = Counter(self.s[id])
             if(len(state_count)):
                 l = state_count.most_common(1)[0][0]
-                # print("sensor states table",l)
             else:
                 print("state counter is empty")
             
@@ -386,12 +306,10 @@ class fusioner:
                 self.total_sensor_states.append(0)
                 self.total_sensor_states_LCSS.append(0)
                 self.total_sensor_four_states.append(0)
-                # self.sensor_table[id].append(0)
                 self.sensor_state = 0 #for each lidar 
             else:
                 self.total_sensor_states.append(data.direction)
                 self.total_sensor_states_LCSS.append(data.LCSS_state)
-                # self.sensor_table[id].append(data.direction)
                 self.sensor_state = data.direction
             print(self.sensor_table)
             
@@ -425,24 +343,8 @@ class fusioner:
             header_ = Header(stamp=rospy.Time.now())
             header_.frame_id = "laser"
             obstacles_.header = header_
-
             
             for i in self.Circle_vec:
-                # if(i.state==self.sensor_state):
-                #     if(str(i.id) in self.d):
-                #         self.d[str(i.id)] = self.d[str(i.id)]+1
-                #     else:
-                #         self.d[str(i.id)] = 0
-                # print(self.tag)
-                # print(int(self.tag))
-                # print(int(i.id))
-                # if(int(i.id) == int(self.tag)):
-                    # i.id ="chiu"
-                # print(self.dtw_distance[i.id])
-                # i.id = str(self.dir_table[i.id])
-                # print("----",i.id)
-                # print(self.state_table_LCSS[i.id])
-                # i.distance = int(self.dtw_distance[i.id])
                 obstacles_.circles.append(i)
             for i in self.Circle_vec_2:
                 obstacles_.circles.append(i)
@@ -450,14 +352,10 @@ class fusioner:
                 obstacles_.circles.append(i)
             for i in self.Circle_vec_4:
                 obstacles_.circles.append(i)
-            # print(self.d)
-            # for k in self.Segment_vec:
-            #     obstacles_.segments.append(k)
             
             self.pub_pairing.publish(obstacles_)
             r.sleep()
    
-
 if __name__ =='__main__':
 
     f = fusioner()
